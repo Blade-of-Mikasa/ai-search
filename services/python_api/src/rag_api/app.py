@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import Settings
-from .core_client import CoreClient, GrpcCoreClient
+from .core_client import CoreClient, HttpCoreClient
 from .db.session import create_database_engine, create_session_factory
 from .errors import register_exception_handlers
 from .generation.runtime import build_answer_service
@@ -29,11 +29,11 @@ def create_app(
     telemetry: TelemetryRuntime | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings()
-    resolved_core_client = core_client or GrpcCoreClient(
-        resolved_settings.core_grpc_target,
-        resolved_settings.core_grpc_timeout_seconds,
-        resolved_settings.core_grpc_index_timeout_seconds,
-        resolved_settings.core_grpc_index_batch_max_bytes,
+    resolved_core_client = core_client or HttpCoreClient(
+        resolved_settings.core_http_base_url,
+        resolved_settings.core_http_timeout_seconds,
+        resolved_settings.core_http_index_timeout_seconds,
+        resolved_settings.core_http_index_batch_max_bytes,
     )
     database_engine = None
     resolved_telemetry = telemetry or build_telemetry(resolved_settings)
@@ -61,7 +61,7 @@ def create_app(
                 await app.state.telemetry.shutdown()
 
     app = FastAPI(
-        title="Multimodal RAG API",
+        title="Nano AI Search API",
         version=resolved_settings.service_version,
         debug=resolved_settings.debug,
         lifespan=lifespan,

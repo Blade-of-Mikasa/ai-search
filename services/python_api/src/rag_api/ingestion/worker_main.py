@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from rag_api.config import Settings
-from rag_api.core_client import GrpcCoreClient
+from rag_api.core_client import HttpCoreClient
 from rag_api.db.session import create_database_engine, create_session_factory
 from rag_api.documents.chunking import DocumentChunker
 from rag_api.documents.embeddings import HttpEmbeddingModel
@@ -37,11 +37,11 @@ async def run() -> None:
     settings = Settings()
     engine = create_database_engine(settings)
     session_factory = create_session_factory(engine)
-    core_client = GrpcCoreClient(
-        settings.core_grpc_target,
-        settings.core_grpc_timeout_seconds,
-        settings.core_grpc_index_timeout_seconds,
-        settings.core_grpc_index_batch_max_bytes,
+    core_client = HttpCoreClient(
+        settings.core_http_base_url,
+        settings.core_http_timeout_seconds,
+        settings.core_http_index_timeout_seconds,
+        settings.core_http_index_batch_max_bytes,
     )
     object_store = S3ObjectStore(settings)
     acl_resolver = SqlAlchemyAssetAclResolver(session_factory)

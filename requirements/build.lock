@@ -1,0 +1,2 @@
+# Build-only dependency used by Blade's Ninja backend.
+ninja==1.13.0

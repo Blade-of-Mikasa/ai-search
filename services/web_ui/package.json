@@ -1,12 +1,11 @@
 {
-  "name": "multimodal-rag-web-ui",
+  "name": "nano-ai-search-web-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "build": "tsc -b && vite build"
   },
   "dependencies": {
     "react": "19.2.8",
@@ -17,7 +16,6 @@
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
     "typescript": "7.0.2",
-    "vite": "8.2.1",
-    "vitest": "4.1.10"
+    "vite": "8.2.1"
   }
 }

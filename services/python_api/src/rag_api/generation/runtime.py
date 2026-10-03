@@ -39,12 +39,7 @@ def build_answer_service(
         timeout_seconds=settings.embedding_timeout_seconds,
     )
     web_searcher = None
-    if (
-        settings.bing_foundry_responses_url is not None
-        and settings.bing_foundry_model_deployment is not None
-        and settings.bing_grounding_connection_id is not None
-        and settings.bing_foundry_access_token is not None
-    ):
+    if settings.web_search_provider != "disabled":
         web_searcher = build_web_search_service(settings)
     return AnswerService(
         planner=ModelQueryPlanner(

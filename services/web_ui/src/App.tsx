@@ -35,14 +35,10 @@ const MODALITY_OPTIONS: { value: Modality; label: string }[] = [
 export function App() {
   const [view, setView] = useState<"ask" | "architecture">("ask");
   const [query, setQuery] = useState(
-    "请结合本地设计文档和公开资料，解释这套系统为什么把证据治理放在 C++ 内核。",
+    "今天人工智能领域有哪些值得关注的进展？请给出来源。",
   );
-  const [scope, setScope] = useState<RetrievalScope>("hybrid");
-  const [modalities, setModalities] = useState<Modality[]>([
-    "document",
-    "image",
-    "video",
-  ]);
+  const [scope, setScope] = useState<RetrievalScope>("web");
+  const [modalities, setModalities] = useState<Modality[]>(["document"]);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
@@ -135,8 +131,8 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">M</span>
           <div>
-            <strong>Mikasa RAG</strong>
-            <small>Evidence-first intelligence</small>
+            <strong>Nano AI Search</strong>
+            <small>Search small. Answer clearly.</small>
           </div>
         </div>
         <nav aria-label="主导航">
@@ -150,7 +146,7 @@ export function App() {
             架构与流程
           </button>
         </nav>
-        <div className="system-status"><span /> Contract v1</div>
+        <div className="system-status"><span /> HTTP Core</div>
       </header>
 
       {view === "architecture" ? (
@@ -159,9 +155,9 @@ export function App() {
         <div className="workspace">
           <section className="query-panel">
             <div className="hero-copy">
-              <span className="eyebrow">MULTIMODAL RESEARCH DESK</span>
+              <span className="eyebrow">NANO RESEARCH DESK</span>
               <h1>每个结论，<br />都能回到证据。</h1>
-              <p>同时检索文档、图片、视频与公开网页，让 C++ 内核先治理证据，再交给模型回答。</p>
+              <p>搜索公开网页并整理证据，再由模型生成带来源的回答；本地多模态检索按需开启。</p>
             </div>
 
             <form onSubmit={submit}>
