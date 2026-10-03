@@ -1,4 +1,4 @@
-"""Typed runtime configuration for the Python API process."""
+"""Typed runtime settings for the Python API process."""
 
 from __future__ import annotations
 
