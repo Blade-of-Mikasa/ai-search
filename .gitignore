@@ -2,30 +2,29 @@
 __pycache__/
 *.py[cod]
 .venv/
-.conan2/
-CMakeUserPresets.json
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.tools/
+.env
+.env.*
+!.env.example
 
 # Frontend
 node_modules/
 dist/
+*.tsbuildinfo
+build*_release/
+build*_debug/
+blade-bin
 
 # Local engineering journal (contains working notes; never commit)
 plan/engineering_journal.local.md
 
-# C++ / CMake / Conan
+# Build output
 build/
-cmake-build-*/
-CMakeFiles/
-CMakeCache.txt
-CTestTestfile.cmake
-Makefile
-cmake_install.cmake
 compile_commands.json
-conanbuildinfo.*
 
 # Editors and operating systems
 .DS_Store

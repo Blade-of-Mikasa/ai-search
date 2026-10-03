@@ -1,0 +1,7 @@
+cc_config(
+    cxx_warnings = ["-Wall", "-Wextra", "-Wpedantic"],
+)
+
+cc_library_config(
+    hdrs_missing_severity = "error",
+)

@@ -20,11 +20,14 @@ def _health_response(
     *,
     ready: bool,
     core_available: bool | None = None,
+    model_configured: bool | None = None,
 ) -> HealthResponse:
     settings: Settings = request.app.state.settings
     checks: dict[str, str] = {"python_api": "ok"}
     if core_available is not None:
         checks["rag_core"] = "ok" if core_available else "unavailable"
+    if model_configured is not None:
+        checks["model_config"] = "ok" if model_configured else "missing_api_key"
     return HealthResponse(
         service=settings.service_name,
         version=settings.service_version,
@@ -43,13 +46,26 @@ async def liveness(request: Request) -> HealthResponse:
 
 @router.get("/health/ready", response_model=HealthResponse)
 async def readiness(request: Request) -> HealthResponse | JSONResponse:
+    settings: Settings = request.app.state.settings
+    chat_api_key = (
+        settings.chat_api_key.get_secret_value().strip()
+        if settings.chat_api_key is not None
+        else ""
+    )
+    model_configured = not (
+        settings.chat_endpoint_url.startswith("https://api.openai.com/")
+        and not chat_api_key
+    )
+    core_available = False
     try:
         core_health = await request.app.state.core_client.health()
-        if core_health.ready:
+        core_available = core_health.ready
+        if core_health.ready and model_configured:
             return _health_response(
                 request,
                 ready=True,
                 core_available=True,
+                model_configured=True,
             )
     except CoreUnavailableError:
         pass
@@ -57,7 +73,8 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
     response = _health_response(
         request,
         ready=False,
-        core_available=False,
+        core_available=core_available,
+        model_configured=model_configured,
     )
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

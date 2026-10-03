@@ -1,8 +1,4 @@
-"""Dependency-free domain types mirrored by the v1 Protobuf contract.
-
-The Protobuf schema remains the cross-process source of truth. These types keep
-surface-layer validation testable before generated gRPC stubs are introduced.
-"""
+"""Dependency-free domain types shared by the HTTP/JSON process boundary."""
 
 from __future__ import annotations
 

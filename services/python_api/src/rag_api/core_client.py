@@ -1,20 +1,19 @@
-"""Async Python adapter for the generated C++ Core gRPC contract."""
+"""Async HTTP/JSON client for the C++ Nano Core."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import importlib
+import json
 from math import isfinite
-from types import ModuleType
-from typing import Protocol
+from typing import Any, Protocol
 
-import grpc
+import aiohttp
 
 from .domain import ExecutionPlan, Modality
 
 
 class CoreUnavailableError(RuntimeError):
-    """Raised when the C++ Core contract or process cannot be reached."""
+    """Raised when the C++ Core cannot be reached or violates its contract."""
 
 
 @dataclass(frozen=True)
@@ -22,21 +21,6 @@ class CoreHealth:
     service: str
     version: str
     ready: bool
-
-
-@dataclass(frozen=True)
-class CorePlanResult:
-    request_id: str
-    context: str
-    evidence_count: int
-    citations: tuple[CoreCitation, ...]
-    conflicts: tuple[CoreConflict, ...]
-    evidence_decisions: tuple[CoreEvidenceDecision, ...]
-    context_token_count: int
-    context_truncated: bool
-    token_count_method: str
-    route_error_codes: tuple[str, ...]
-    partial_failure: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +47,21 @@ class CoreEvidenceDecision:
     disposition: str
     representative_evidence_id: str
     reason: str
+
+
+@dataclass(frozen=True)
+class CorePlanResult:
+    request_id: str
+    context: str
+    evidence_count: int
+    citations: tuple[CoreCitation, ...]
+    conflicts: tuple[CoreConflict, ...]
+    evidence_decisions: tuple[CoreEvidenceDecision, ...]
+    context_token_count: int
+    context_truncated: bool
+    token_count_method: str
+    route_error_codes: tuple[str, ...]
+    partial_failure: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,237 +110,186 @@ class CoreClient(Protocol):
     async def close(self) -> None: ...
 
 
-class GrpcCoreClient:
-    """Owns a lazy gRPC channel and maps generated messages to domain values."""
+class HttpCoreClient:
+    """Maps typed Python values to the Nano Core HTTP/JSON endpoints."""
 
     def __init__(
         self,
-        target: str,
-        timeout_seconds: float = 1.0,
+        base_url: str,
+        timeout_seconds: float = 2.0,
         index_timeout_seconds: float = 60.0,
-        index_batch_max_bytes: int = 3_000_000,
+        index_batch_max_bytes: int = 4_000_000,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
-        if not 65_536 <= index_batch_max_bytes <= 3_500_000:
+        if not base_url.startswith(("http://", "https://")):
+            raise ValueError("core base URL must use HTTP or HTTPS")
+        if not 65_536 <= index_batch_max_bytes <= 7_000_000:
             raise ValueError(
-                "index_batch_max_bytes must be between 65536 and 3500000"
+                "index_batch_max_bytes must be between 65536 and 7000000"
             )
-        self._target = target
-        self._timeout_seconds = timeout_seconds
-        self._index_timeout_seconds = index_timeout_seconds
+        self._base_url = base_url.rstrip("/")
+        self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        self._index_timeout = aiohttp.ClientTimeout(total=index_timeout_seconds)
         self._index_batch_max_bytes = index_batch_max_bytes
-        self._channel: grpc.aio.Channel | None = None
-        self._messages: ModuleType | None = None
-        self._stub = None
-        self._index_stub = None
-
-    def _ensure_stub(self):
-        if self._stub is not None:
-            return self._stub
-        try:
-            self._messages = importlib.import_module("rag_core_pb2")
-            services = importlib.import_module("rag_core_pb2_grpc")
-        except ModuleNotFoundError as error:
-            raise CoreUnavailableError(
-                "generated Python gRPC contract is unavailable; "
-                "run ./scripts/generate_proto.sh and include "
-                "build/generated/python in PYTHONPATH"
-            ) from error
-
-        self._channel = grpc.aio.insecure_channel(self._target)
-        self._stub = services.RagCoreServiceStub(self._channel)
-        self._index_stub = services.IndexCoreServiceStub(self._channel)
-        return self._stub
-
-    def _ensure_index_stub(self):
-        self._ensure_stub()
-        return self._index_stub
+        self._session = session
+        self._owns_session = session is None
 
     async def health(self) -> CoreHealth:
-        stub = self._ensure_stub()
-        assert self._messages is not None
+        payload = await self._request("GET", "/health", timeout=self._timeout)
         try:
-            response = await stub.Health(
-                self._messages.HealthRequest(),
-                timeout=self._timeout_seconds,
-                wait_for_ready=True,
+            return CoreHealth(
+                service=_string(payload, "service"),
+                version=_string(payload, "version"),
+                ready=_bool(payload, "ready"),
             )
-        except grpc.aio.AioRpcError as error:
-            raise CoreUnavailableError(
-                f"C++ Core health check failed: {error.code().name}"
-            ) from error
-        return CoreHealth(
-            service=response.service,
-            version=response.version,
-            ready=response.ready,
-        )
+        except (KeyError, TypeError, ValueError) as error:
+            raise CoreUnavailableError("Nano Core returned invalid health JSON") from error
 
     async def execute_plan(self, plan: ExecutionPlan) -> CorePlanResult:
         validation_errors = plan.validate()
         if validation_errors:
             raise ValueError("; ".join(validation_errors))
-
-        stub = self._ensure_stub()
-        assert self._messages is not None
-        request = self._messages.ExecutePlanRequest(
-            request_id=plan.request_id,
-            user_id=plan.user_id,
-            conversation_id=plan.conversation_id,
-            tenant_id=plan.tenant_id,
-            allowed_acl_ids=plan.allowed_acl_ids,
-            routes=[
-                self._messages.RetrievalRoute(
-                    route_id=route.route_id,
-                    query=route.query,
-                    source_scope=int(route.source_scope),
-                    modality=int(route.modality),
-                    top_k=route.top_k,
-                    timeout_ms=route.timeout_ms,
-                    dense_embedding=route.dense_embedding,
-                    embedding_model_id=route.embedding_model_id,
-                    embedding_model_version=route.embedding_model_version,
-                )
-                for route in plan.routes
-            ],
-            external_evidence=[
-                self._messages.Evidence(
-                    evidence_id=evidence.evidence_id,
-                    content=evidence.content,
-                    modality=int(evidence.modality),
-                    source_scope=int(evidence.source_scope),
-                    title=evidence.title,
-                    source=evidence.source,
-                    url=evidence.url,
-                    published_at_unix_ms=evidence.published_at_unix_ms,
-                    retrieved_at_unix_ms=evidence.retrieved_at_unix_ms,
-                    score=evidence.score,
-                    metadata=dict(evidence.metadata),
-                    content_sha256=evidence.content_sha256,
-                )
-                for evidence in plan.external_evidence
-            ],
-            context_token_budget=plan.context_token_budget,
-            max_evidence_tokens=plan.max_evidence_tokens,
+        payload = await self._request(
+            "POST",
+            "/v1/execute-plan",
+            json_body={
+                "request_id": plan.request_id,
+                "user_id": plan.user_id,
+                "conversation_id": plan.conversation_id,
+                "tenant_id": plan.tenant_id,
+                "allowed_acl_ids": list(plan.allowed_acl_ids),
+                "routes": [
+                    {
+                        "route_id": route.route_id,
+                        "query": route.query,
+                        "source_scope": int(route.source_scope),
+                        "modality": int(route.modality),
+                        "top_k": route.top_k,
+                        "timeout_ms": route.timeout_ms,
+                        "dense_embedding": list(route.dense_embedding),
+                        "embedding_model_id": route.embedding_model_id,
+                        "embedding_model_version": route.embedding_model_version,
+                    }
+                    for route in plan.routes
+                ],
+                "external_evidence": [
+                    {
+                        "evidence_id": item.evidence_id,
+                        "content": item.content,
+                        "modality": int(item.modality),
+                        "source_scope": int(item.source_scope),
+                        "title": item.title,
+                        "source": item.source,
+                        "url": item.url,
+                        "published_at_unix_ms": item.published_at_unix_ms,
+                        "retrieved_at_unix_ms": item.retrieved_at_unix_ms,
+                        "score": item.score,
+                        "metadata": dict(item.metadata),
+                        "content_sha256": item.content_sha256,
+                    }
+                    for item in plan.external_evidence
+                ],
+                "context_token_budget": plan.context_token_budget,
+                "max_evidence_tokens": plan.max_evidence_tokens,
+            },
+            timeout=self._timeout,
         )
         try:
-            response = await stub.ExecutePlan(
-                request,
-                timeout=self._timeout_seconds,
-                wait_for_ready=True,
+            evidence = _list(payload, "evidence")
+            return CorePlanResult(
+                request_id=_string(payload, "request_id"),
+                context=_string(payload, "context"),
+                evidence_count=len(evidence),
+                citations=tuple(
+                    CoreCitation(
+                        citation_id=_int(item, "citation_id"),
+                        evidence_id=_string(item, "evidence_id"),
+                        source=_string(item, "source"),
+                        url=_string(item, "url"),
+                        title=_string(item, "title"),
+                        modality=Modality(_int(item, "modality")),
+                        metadata=tuple(sorted(_dict(item, "metadata").items())),
+                    )
+                    for item in _list(payload, "citations")
+                ),
+                conflicts=tuple(
+                    CoreConflict(
+                        evidence_ids=tuple(
+                            _require_strings(item, "evidence_ids")
+                        ),
+                        type=_string(item, "type"),
+                        reason=_string(item, "reason"),
+                    )
+                    for item in _list(payload, "conflicts")
+                ),
+                evidence_decisions=tuple(
+                    CoreEvidenceDecision(
+                        evidence_id=_string(item, "evidence_id"),
+                        disposition=_string(item, "disposition"),
+                        representative_evidence_id=_string(
+                            item, "representative_evidence_id"
+                        ),
+                        reason=_string(item, "reason"),
+                    )
+                    for item in _list(payload, "evidence_decisions")
+                ),
+                context_token_count=_int(payload, "context_token_count"),
+                context_truncated=_bool(payload, "context_truncated"),
+                token_count_method=_string(payload, "token_count_method"),
+                route_error_codes=tuple(
+                    _string(item, "code")
+                    for item in _list(payload, "route_errors")
+                ),
+                partial_failure=_bool(payload, "partial_failure"),
             )
-        except grpc.aio.AioRpcError as error:
-            if error.code() is grpc.StatusCode.INVALID_ARGUMENT:
-                raise ValueError(
-                    f"C++ Core rejected ExecutePlan: {error.details()}"
-                ) from error
+        except (KeyError, TypeError, ValueError) as error:
             raise CoreUnavailableError(
-                f"C++ Core ExecutePlan failed: {error.code().name}"
+                f"Nano Core returned invalid execute-plan JSON: {error}"
             ) from error
-        return CorePlanResult(
-            request_id=response.request_id,
-            context=response.context,
-            evidence_count=len(response.evidence),
-            citations=tuple(
-                CoreCitation(
-                    citation_id=citation.citation_id,
-                    evidence_id=citation.evidence_id,
-                    source=citation.source,
-                    url=citation.url,
-                    title=citation.title,
-                    modality=Modality(citation.modality),
-                    metadata=tuple(sorted(citation.metadata.items())),
-                )
-                for citation in response.citations
-            ),
-            conflicts=tuple(
-                CoreConflict(
-                    evidence_ids=tuple(conflict.evidence_ids),
-                    type=conflict.type,
-                    reason=conflict.reason,
-                )
-                for conflict in response.conflicts
-            ),
-            evidence_decisions=tuple(
-                CoreEvidenceDecision(
-                    evidence_id=decision.evidence_id,
-                    disposition=decision.disposition,
-                    representative_evidence_id=(
-                        decision.representative_evidence_id
-                    ),
-                    reason=decision.reason,
-                )
-                for decision in response.evidence_decisions
-            ),
-            context_token_count=response.context_token_count,
-            context_truncated=response.context_truncated,
-            token_count_method=response.token_count_method,
-            route_error_codes=tuple(error.code for error in response.route_errors),
-            partial_failure=response.partial_failure,
-        )
 
-    async def index_asset(
-        self, command: IndexAssetCommand
-    ) -> IndexAssetResult:
+    async def index_asset(self, command: IndexAssetCommand) -> IndexAssetResult:
         self._validate_index_command(command)
-        stub = self._ensure_index_stub()
-        assert self._messages is not None
-        unit_messages = tuple(
-            self._messages.NormalizedUnit(
-                unit_id=unit.unit_id,
-                modality=int(unit.modality),
-                content=unit.content,
-                title=unit.title,
-                ordinal=unit.ordinal,
-                page_number=unit.page_number,
-                content_sha256=unit.content_sha256,
-                dense_embedding=unit.dense_embedding,
-                embedding_model_id=unit.embedding_model_id,
-                embedding_model_version=unit.embedding_model_version,
-                metadata=dict(unit.metadata),
-            )
-            for unit in command.units
-        )
-        batches = self._index_batches(command, unit_messages)
+        units = tuple(self._unit_payload(unit) for unit in command.units)
+        batches = self._index_batches(command, units)
         indexed_unit_count = 0
         collection_alias = ""
         for batch_number, batch in enumerate(batches):
-            request = self._index_request(
-                command,
-                batch,
-                append_to_asset_version=batch_number > 0,
+            response = await self._request(
+                "POST",
+                "/v1/index-asset",
+                json_body=self._index_payload(
+                    command,
+                    batch,
+                    append_to_asset_version=batch_number > 0,
+                ),
+                timeout=self._index_timeout,
             )
             try:
-                response = await stub.IndexAsset(
-                    request,
-                    timeout=self._index_timeout_seconds,
-                    wait_for_ready=True,
-                )
-            except grpc.aio.AioRpcError as error:
-                if error.code() in {
-                    grpc.StatusCode.INVALID_ARGUMENT,
-                    grpc.StatusCode.FAILED_PRECONDITION,
-                }:
-                    raise ValueError(
-                        f"C++ Core rejected IndexAsset: {error.details()}"
-                    ) from error
+                response_request_id = _string(response, "request_id")
+                response_asset_id = _string(response, "asset_id")
+                response_asset_version = _int(response, "asset_version")
+                response_count = _int(response, "indexed_unit_count")
+                response_alias = _string(response, "collection_alias")
+            except (KeyError, TypeError, ValueError) as error:
                 raise CoreUnavailableError(
-                    f"C++ Core IndexAsset failed: {error.code().name}"
+                    "Nano Core returned invalid index JSON"
                 ) from error
             if (
-                response.request_id != command.request_id
-                or response.asset_id != command.asset_id
-                or response.asset_version != command.asset_version
-                or response.indexed_unit_count != len(batch)
-                or not response.collection_alias
+                response_request_id != command.request_id
+                or response_asset_id != command.asset_id
+                or response_asset_version != command.asset_version
+                or response_count != len(batch)
+                or not response_alias
             ):
                 raise CoreUnavailableError(
-                    "C++ Core returned an invalid IndexAsset response"
+                    "Nano Core returned inconsistent index metadata"
                 )
-            if collection_alias and collection_alias != response.collection_alias:
+            if collection_alias and collection_alias != response_alias:
                 raise CoreUnavailableError(
-                    "C++ Core changed collection during batched IndexAsset"
+                    "Nano Core changed collection during batched indexing"
                 )
-            collection_alias = response.collection_alias
-            indexed_unit_count += response.indexed_unit_count
+            collection_alias = response_alias
+            indexed_unit_count += response_count
         return IndexAssetResult(
             request_id=command.request_id,
             asset_id=command.asset_id,
@@ -350,50 +298,115 @@ class GrpcCoreClient:
             collection_alias=collection_alias,
         )
 
-    def _index_request(
+    async def _request(
         self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+        timeout: aiohttp.ClientTimeout,
+    ) -> dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.request(
+                method,
+                f"{self._base_url}{path}",
+                json=json_body,
+                timeout=timeout,
+            ) as response:
+                try:
+                    payload = await response.json(content_type=None)
+                except (json.JSONDecodeError, ValueError, TypeError) as error:
+                    raise CoreUnavailableError(
+                        f"Nano Core returned non-JSON HTTP {response.status}"
+                    ) from error
+                if not isinstance(payload, dict):
+                    raise CoreUnavailableError("Nano Core JSON must be an object")
+                if not 200 <= response.status < 300:
+                    detail = payload.get("error", {})
+                    message = (
+                        detail.get("message", "request rejected")
+                        if isinstance(detail, dict)
+                        else "request rejected"
+                    )
+                    if response.status in {400, 411, 412, 413, 422}:
+                        raise ValueError(f"Nano Core rejected request: {message}")
+                    raise CoreUnavailableError(
+                        f"Nano Core HTTP {response.status}: {message}"
+                    )
+                return payload
+        except (ValueError, CoreUnavailableError):
+            raise
+        except (aiohttp.ClientError, TimeoutError) as error:
+            raise CoreUnavailableError(
+                f"Nano Core HTTP request failed: {type(error).__name__}"
+            ) from error
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(trust_env=False)
+            self._owns_session = True
+        return self._session
+
+    @staticmethod
+    def _unit_payload(unit: IndexUnit) -> dict[str, Any]:
+        return {
+            "unit_id": unit.unit_id,
+            "modality": int(unit.modality),
+            "content": unit.content,
+            "title": unit.title,
+            "ordinal": unit.ordinal,
+            "page_number": unit.page_number,
+            "content_sha256": unit.content_sha256,
+            "dense_embedding": list(unit.dense_embedding),
+            "embedding_model_id": unit.embedding_model_id,
+            "embedding_model_version": unit.embedding_model_version,
+            "metadata": dict(unit.metadata),
+        }
+
+    @staticmethod
+    def _index_payload(
         command: IndexAssetCommand,
-        units: tuple[object, ...],
+        units: tuple[dict[str, Any], ...],
         *,
         append_to_asset_version: bool,
-    ):
-        assert self._messages is not None
-        return self._messages.IndexAssetRequest(
-            request_id=command.request_id,
-            tenant_id=command.tenant_id,
-            acl_id=command.acl_id,
-            asset_id=command.asset_id,
-            asset_version_id=command.asset_version_id,
-            asset_version=command.asset_version,
-            object_key=command.object_key,
-            units=units,
-            append_to_asset_version=append_to_asset_version,
-        )
+    ) -> dict[str, Any]:
+        return {
+            "request_id": command.request_id,
+            "tenant_id": command.tenant_id,
+            "acl_id": command.acl_id,
+            "asset_id": command.asset_id,
+            "asset_version_id": command.asset_version_id,
+            "asset_version": command.asset_version,
+            "object_key": command.object_key,
+            "units": list(units),
+            "append_to_asset_version": append_to_asset_version,
+        }
 
     def _index_batches(
         self,
         command: IndexAssetCommand,
-        units: tuple[object, ...],
-    ) -> tuple[tuple[object, ...], ...]:
-        batches: list[tuple[object, ...]] = []
-        current: list[object] = []
+        units: tuple[dict[str, Any], ...],
+    ) -> tuple[tuple[dict[str, Any], ...], ...]:
+        batches: list[tuple[dict[str, Any], ...]] = []
+        current: list[dict[str, Any]] = []
         for unit in units:
             current.append(unit)
-            request = self._index_request(
+            payload = self._index_payload(
                 command, tuple(current), append_to_asset_version=True
             )
-            if request.ByteSize() <= self._index_batch_max_bytes:
+            if _json_size(payload) <= self._index_batch_max_bytes:
                 continue
             current.pop()
             if not current:
-                raise ValueError("one normalized unit exceeds the gRPC batch limit")
+                raise ValueError("one normalized unit exceeds the HTTP batch limit")
             batches.append(tuple(current))
             current = [unit]
-            request = self._index_request(
+            payload = self._index_payload(
                 command, tuple(current), append_to_asset_version=True
             )
-            if request.ByteSize() > self._index_batch_max_bytes:
-                raise ValueError("one normalized unit exceeds the gRPC batch limit")
+            if _json_size(payload) > self._index_batch_max_bytes:
+                raise ValueError("one normalized unit exceeds the HTTP batch limit")
         if current:
             batches.append(tuple(current))
         return tuple(batches)
@@ -446,82 +459,130 @@ class GrpcCoreClient:
                 raise ValueError(
                     "index units must share one modality and embedding model schema"
                 )
-            metadata_keys: set[str] = set()
-            metadata_values: dict[str, str] = {}
-            for key, value in unit.metadata:
-                if (
-                    not key
-                    or len(key.encode("utf-8")) > 128
-                    or len(value.encode("utf-8")) > 60_000
-                    or key in metadata_keys
-                ):
-                    raise ValueError("index unit metadata must be unique and bounded")
-                metadata_keys.add(key)
-                metadata_values[key] = value
+            metadata = dict(unit.metadata)
+            if len(metadata) != len(unit.metadata) or any(
+                not key
+                or len(key.encode("utf-8")) > 128
+                or len(value.encode("utf-8")) > 60_000
+                for key, value in unit.metadata
+            ):
+                raise ValueError("index unit metadata must be unique and bounded")
             if unit.modality is Modality.IMAGE:
-                width = metadata_values.get("width", "")
-                height = metadata_values.get("height", "")
-                if (
-                    not unit.title
-                    or metadata_values.get("media_type")
-                    not in {"image/jpeg", "image/png", "image/webp"}
-                    or not width.isascii()
-                    or not width.isdecimal()
-                    or not height.isascii()
-                    or not height.isdecimal()
-                    or not 1 <= int(width) <= 4_294_967_295
-                    or not 1 <= int(height) <= 4_294_967_295
-                    or not metadata_values.get("vision_model_id")
-                    or not metadata_values.get("vision_model_version")
-                ):
-                    raise ValueError("image index metadata and caption must be valid")
+                _validate_image_metadata(unit, metadata)
             if unit.modality is Modality.VIDEO:
-                integer_fields = {
-                    name: metadata_values.get(name, "")
-                    for name in (
-                        "duration_ms",
-                        "width",
-                        "height",
-                        "start_ms",
-                        "end_ms",
-                        "keyframe_ms",
-                    )
-                }
-                if any(
-                    not value.isascii() or not value.isdecimal()
-                    for value in integer_fields.values()
-                ):
-                    raise ValueError("video timestamps and dimensions must be integers")
-                duration_ms = int(integer_fields["duration_ms"])
-                start_ms = int(integer_fields["start_ms"])
-                end_ms = int(integer_fields["end_ms"])
-                keyframe_ms = int(integer_fields["keyframe_ms"])
-                if (
-                    not unit.title
-                    or metadata_values.get("media_type")
-                    not in {"video/mp4", "video/quicktime", "video/webm"}
-                    or not 1 <= duration_ms <= 86_400_000
-                    or not 1 <= int(integer_fields["width"]) <= 4_294_967_295
-                    or not 1 <= int(integer_fields["height"]) <= 4_294_967_295
-                    or int(integer_fields["width"]) > 32_768
-                    or int(integer_fields["height"]) > 32_768
-                    or not 0 <= start_ms < end_ms <= duration_ms
-                    or not start_ms <= keyframe_ms < end_ms
-                    or not metadata_values.get("caption")
-                    or not metadata_values.get("speech_model_id")
-                    or not metadata_values.get("speech_model_version")
-                    or not metadata_values.get("vision_model_id")
-                    or not metadata_values.get("vision_model_version")
-                ):
-                    raise ValueError("video index metadata and segment bounds are invalid")
+                _validate_video_metadata(unit, metadata)
             if unit.unit_id in unit_ids or unit.ordinal in ordinals:
                 raise ValueError("index unit IDs and ordinals must be unique")
             unit_ids.add(unit.unit_id)
             ordinals.add(unit.ordinal)
 
     async def close(self) -> None:
-        if self._channel is not None:
-            await self._channel.close()
-        self._channel = None
-        self._stub = None
-        self._index_stub = None
+        if self._session is not None and self._owns_session:
+            await self._session.close()
+        self._session = None
+
+
+def _validate_image_metadata(unit: IndexUnit, metadata: dict[str, str]) -> None:
+    width = metadata.get("width", "")
+    height = metadata.get("height", "")
+    if (
+        not unit.title
+        or metadata.get("media_type")
+        not in {"image/jpeg", "image/png", "image/webp"}
+        or not width.isascii()
+        or not width.isdecimal()
+        or not height.isascii()
+        or not height.isdecimal()
+        or not 1 <= int(width) <= 4_294_967_295
+        or not 1 <= int(height) <= 4_294_967_295
+        or not metadata.get("vision_model_id")
+        or not metadata.get("vision_model_version")
+    ):
+        raise ValueError("image index metadata and caption must be valid")
+
+
+def _validate_video_metadata(unit: IndexUnit, metadata: dict[str, str]) -> None:
+    names = (
+        "duration_ms",
+        "width",
+        "height",
+        "start_ms",
+        "end_ms",
+        "keyframe_ms",
+    )
+    values = {name: metadata.get(name, "") for name in names}
+    if any(not value.isascii() or not value.isdecimal() for value in values.values()):
+        raise ValueError("video timestamps and dimensions must be integers")
+    duration = int(values["duration_ms"])
+    start = int(values["start_ms"])
+    end = int(values["end_ms"])
+    keyframe = int(values["keyframe_ms"])
+    if (
+        not unit.title
+        or metadata.get("media_type")
+        not in {"video/mp4", "video/quicktime", "video/webm"}
+        or not 1 <= duration <= 86_400_000
+        or not 1 <= int(values["width"]) <= 32_768
+        or not 1 <= int(values["height"]) <= 32_768
+        or not 0 <= start < end <= duration
+        or not start <= keyframe < end
+        or not metadata.get("caption")
+        or not metadata.get("speech_model_id")
+        or not metadata.get("speech_model_version")
+        or not metadata.get("vision_model_id")
+        or not metadata.get("vision_model_version")
+    ):
+        raise ValueError("video index metadata and segment bounds are invalid")
+
+
+def _json_size(payload: dict[str, Any]) -> int:
+    return len(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    )
+
+
+def _string(payload: dict[str, Any], key: str) -> str:
+    value = payload[key]
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a string")
+    return value
+
+
+def _int(payload: dict[str, Any], key: str) -> int:
+    value = payload[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{key} must be an integer")
+    return value
+
+
+def _bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload[key]
+    if not isinstance(value, bool):
+        raise TypeError(f"{key} must be a boolean")
+    return value
+
+
+def _list(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = payload[key]
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise TypeError(f"{key} must be a list of objects")
+    return value
+
+
+def _dict(payload: dict[str, Any], key: str) -> dict[str, str]:
+    value = payload[key]
+    if not isinstance(value, dict) or any(
+        not isinstance(item_key, str) or not isinstance(item_value, str)
+        for item_key, item_value in value.items()
+    ):
+        raise TypeError(f"{key} must map strings to strings")
+    return value
+
+
+def _require_strings(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload[key]
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise TypeError(f"{key} must be a list of strings")
+    return value

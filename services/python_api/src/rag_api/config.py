@@ -26,15 +26,15 @@ class Settings(BaseSettings):
         frozen=True,
     )
 
-    service_name: str = "multimodal-rag-api"
-    service_version: str = "0.1.0"
+    service_name: str = "nano-ai-search-api"
+    service_version: str = "0.2.0"
     environment: Environment = "local"
     api_prefix: str = "/api/v1"
     debug: bool = False
-    core_grpc_target: str = "127.0.0.1:50051"
-    core_grpc_timeout_seconds: float = 1.0
-    core_grpc_index_timeout_seconds: float = 60.0
-    core_grpc_index_batch_max_bytes: int = 3_000_000
+    core_http_base_url: str = "http://127.0.0.1:8081"
+    core_http_timeout_seconds: float = 2.0
+    core_http_index_timeout_seconds: float = 60.0
+    core_http_index_batch_max_bytes: int = 4_000_000
     mysql_dsn: SecretStr = SecretStr(
         "mysql+asyncmy://rag:rag@127.0.0.1:3306/"
         "multimodal_rag?charset=utf8mb4"
@@ -125,6 +125,8 @@ class Settings(BaseSettings):
     bing_foundry_access_token: SecretStr | None = None
     bing_default_market: str | None = None
     bing_default_language: str | None = None
+    web_search_provider: Literal["openai", "foundry", "disabled"] = "openai"
+    web_search_model_id: str | None = None
     web_search_timeout_seconds: float = 30.0
     web_fetch_timeout_seconds: float = 10.0
     web_fetch_max_bytes: int = 5_000_000
@@ -149,37 +151,38 @@ class Settings(BaseSettings):
             raise ValueError("api_prefix must not end with '/'")
         return value
 
-    @field_validator("core_grpc_target")
+    @field_validator("core_http_base_url")
     @classmethod
-    def validate_core_grpc_target(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("core_grpc_target must not be empty")
-        return value
+    def validate_core_http_base_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("core_http_base_url must be an HTTP(S) URL")
+        return value.rstrip("/")
 
-    @field_validator("core_grpc_timeout_seconds")
+    @field_validator("core_http_timeout_seconds")
     @classmethod
-    def validate_core_grpc_timeout(cls, value: float) -> float:
+    def validate_core_http_timeout(cls, value: float) -> float:
         if not 0.05 <= value <= 30:
             raise ValueError(
-                "core_grpc_timeout_seconds must be between 0.05 and 30"
+                "core_http_timeout_seconds must be between 0.05 and 30"
             )
         return value
 
-    @field_validator("core_grpc_index_timeout_seconds")
+    @field_validator("core_http_index_timeout_seconds")
     @classmethod
-    def validate_core_grpc_index_timeout(cls, value: float) -> float:
+    def validate_core_http_index_timeout(cls, value: float) -> float:
         if not 1 <= value <= 600:
             raise ValueError(
-                "core_grpc_index_timeout_seconds must be between 1 and 600"
+                "core_http_index_timeout_seconds must be between 1 and 600"
             )
         return value
 
-    @field_validator("core_grpc_index_batch_max_bytes")
+    @field_validator("core_http_index_batch_max_bytes")
     @classmethod
-    def validate_core_grpc_index_batch_size(cls, value: int) -> int:
-        if not 65_536 <= value <= 3_500_000:
+    def validate_core_http_index_batch_size(cls, value: int) -> int:
+        if not 65_536 <= value <= 7_000_000:
             raise ValueError(
-                "core_grpc_index_batch_max_bytes must be between 65536 and 3500000"
+                "core_http_index_batch_max_bytes must be between 65536 and 7000000"
             )
         return value
 
@@ -237,6 +240,18 @@ class Settings(BaseSettings):
         if not value.strip() or len(value) > 256:
             raise ValueError(
                 "chat model identity must contain between 1 and 256 characters"
+            )
+        return value
+
+    @field_validator("web_search_model_id")
+    @classmethod
+    def validate_web_search_model_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or len(value) > 256:
+            raise ValueError(
+                "web search model identity must contain between 1 and 256 characters"
             )
         return value
 

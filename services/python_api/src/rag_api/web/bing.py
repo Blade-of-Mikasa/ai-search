@@ -130,7 +130,11 @@ class FoundryBingSearchProvider:
                 "Foundry Bing returned invalid JSON", retryable=False
             ) from error
         return _parse_response(
-            payload, query.text, self.provider_name, max_results=query.count
+            payload,
+            query.text,
+            self.provider_name,
+            max_results=query.count,
+            fallback_search_url=f"https://www.bing.com/search?q={quote_plus(query.text)}",
         )
 
     @asynccontextmanager
@@ -143,7 +147,12 @@ class FoundryBingSearchProvider:
 
 
 def _parse_response(
-    payload: Any, query: str, provider: str, *, max_results: int
+    payload: Any,
+    query: str,
+    provider: str,
+    *,
+    max_results: int,
+    fallback_search_url: str | None = None,
 ) -> SearchResponse:
     if not isinstance(payload, dict):
         raise SearchProviderError(
@@ -217,8 +226,8 @@ def _parse_response(
             "Foundry Bing response contains no URL citations", retryable=False
         )
 
-    if not search_urls:
-        search_urls.append(f"https://www.bing.com/search?q={quote_plus(query)}")
+    if not search_urls and fallback_search_url is not None:
+        search_urls.append(fallback_search_url)
     return SearchResponse(
         provider=provider,
         query=query,
