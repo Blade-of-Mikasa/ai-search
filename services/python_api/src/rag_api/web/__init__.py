@@ -18,6 +18,7 @@ from .domain import (
 )
 from .service import WebSearchService
 from .evidence import web_bundle_to_evidence
+from .tavily import TavilySearchProvider
 
 __all__ = [
     "ExtractionStatus",
@@ -35,5 +36,6 @@ __all__ = [
     "WebSearchBundle",
     "WebSearchService",
     "WebSource",
+    "TavilySearchProvider",
     "web_bundle_to_evidence",
 ]

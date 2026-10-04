@@ -2,17 +2,28 @@
 
 ## 最小运行配置
 
-纯网页 AI Search 只需要以下配置，其中前三项必填：
+纯网页 AI Search 只需要一个生成模型和一个网页搜索 provider：
 
 | 环境变量 | 必需 | 说明 |
 |---|---:|---|
 | `RAG_CHAT_ENDPOINT_URL` | 是 | OpenAI-compatible Responses endpoint |
 | `RAG_CHAT_API_KEY` | 是 | 模型服务 Key；不要提交到 Git |
 | `RAG_CHAT_MODEL_ID` | 是 | Planner 与最终回答使用的模型 |
-| `RAG_WEB_SEARCH_MODEL_ID` | 否 | 默认复用 Chat 模型 |
+| `RAG_CHAT_REASONING_EFFORT` | 否 | Responses 推理强度；DeepSeek Nano 路径建议 `none` |
+| `RAG_WEB_SEARCH_PROVIDER` | 是 | `tavily`、`openai`、`foundry` 或 `disabled` |
+| `RAG_TAVILY_API_KEY` | Tavily 时 | Tavily API Key；不要提交到 Git |
+| `RAG_ANSWER_WEB_MAX_ROUTES` | 否 | 每个问题最多搜索几条查询，默认 2 |
 
-`RAG_WEB_SEARCH_PROVIDER=openai` 会通过 Responses API 的 `web_search`
-工具搜索网页。`.env.example` 已给出可直接复制的配置模板。
+推荐使用 `RAG_WEB_SEARCH_PROVIDER=tavily` 和 Basic Search。Tavily 只负责返回
+带 URL 的网页来源，Chat 模型负责查询规划和最终回答；这样 DeepSeek 等没有内置
+联网搜索的 Responses-compatible 模型也能使用。
+
+其他 provider：
+
+- `openai`：复用 Chat endpoint、Key 和 `web_search` 工具，可用
+  `RAG_WEB_SEARCH_MODEL_ID` 覆盖模型。
+- `foundry`：使用 Microsoft Foundry Grounding with Bing 的单独配置。
+- `disabled`：关闭联网搜索，仅保留本地检索能力。
 
 ## 可选能力
 

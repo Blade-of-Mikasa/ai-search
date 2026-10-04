@@ -19,6 +19,9 @@ Nano AI Search is a lightweight web-first AI search application:
 - The default Nano path is web search. MySQL, Kafka, object storage, embeddings,
   vision, and speech services are optional capabilities, not startup
   prerequisites.
+- Web search providers are replaceable. Tavily is the recommended split-provider
+  path; OpenAI Responses web search and Microsoft Foundry Bing Grounding remain
+  supported.
 - The C++ index is process-local memory and is cleared on restart.
 
 ## Configuration

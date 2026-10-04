@@ -24,6 +24,7 @@ def build_answer_service(
         ),
         model_id=settings.chat_model_id,
         model_version=settings.chat_model_version,
+        reasoning_effort=settings.chat_reasoning_effort,
         timeout_seconds=settings.chat_timeout_seconds,
     )
     embedding_model = HttpEmbeddingModel(
@@ -45,6 +46,7 @@ def build_answer_service(
         planner=ModelQueryPlanner(
             chat_model,
             max_output_tokens=settings.planner_max_output_tokens,
+            max_web_routes=settings.answer_web_max_routes,
         ),
         embedding_model=embedding_model,
         core_client=core_client,
