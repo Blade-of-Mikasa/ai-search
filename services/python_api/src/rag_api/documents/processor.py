@@ -1,4 +1,4 @@
-"""Kafka ingestion processor composing Python normalization with C++ indexing."""
+"""Kafka ingestion processor composing normalization with Python indexing."""
 
 from __future__ import annotations
 
@@ -142,5 +142,5 @@ class DocumentIngestProcessor:
             raise PermanentIngestError("INDEX_CONTRACT_INVALID", str(error)) from error
         if result.indexed_unit_count != len(chunks):
             raise RetryableIngestError(
-                "INDEX_COUNT_MISMATCH", "C++ Core indexed an unexpected unit count"
+                "INDEX_COUNT_MISMATCH", "Python Core indexed an unexpected unit count"
             )

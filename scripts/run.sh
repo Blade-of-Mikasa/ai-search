@@ -5,7 +5,7 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repository_root}"
 
-if [[ ! -x .venv/bin/uvicorn ]]; then
+if [[ ! -x .venv/bin/python ]]; then
   echo "Dependencies are missing. Run ./scripts/bootstrap.sh first." >&2
   exit 1
 fi
@@ -39,12 +39,13 @@ web_port="${NANO_WEB_PORT:-5173}"
 export RAG_CORE_HTTP_BASE_URL="http://${core_host}:${core_port}"
 export VITE_API_PROXY_TARGET="http://${api_host}:${api_port}"
 
-./scripts/blade.sh run //core:nano_core -- \
-  --listen "${core_host}:${core_port}" &
+PYTHONPATH=services/python_api/src \
+  .venv/bin/python -m uvicorn rag_api.core.main:app \
+  --host "${core_host}" --port "${core_port}" &
 pids+=("$!")
 
 PYTHONPATH=services/python_api/src \
-  .venv/bin/uvicorn rag_api.main:app \
+  .venv/bin/python -m uvicorn rag_api.main:app \
   --host "${api_host}" --port "${api_port}" &
 pids+=("$!")
 

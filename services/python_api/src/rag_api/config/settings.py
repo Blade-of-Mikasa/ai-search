@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from rag_api import __version__
+
 
 Environment = Literal["local", "test", "staging", "production"]
 
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     service_name: str = "nano-ai-search-api"
-    service_version: str = "0.2.0"
+    service_version: str = __version__
     environment: Environment = "local"
     api_prefix: str = "/api/v1"
     debug: bool = False

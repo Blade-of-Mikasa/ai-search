@@ -1,4 +1,4 @@
-"""Dependency-free domain types shared by the HTTP/JSON process boundary."""
+"""Dependency-free domain types shared by API, workers, and Python Core."""
 
 from __future__ import annotations
 

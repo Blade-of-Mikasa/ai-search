@@ -1,2 +1,2 @@
-# Build-only dependency used by Blade's Ninja backend.
-ninja==1.13.0
+# Build backend used for the editable Python package install.
+setuptools==84.0.0

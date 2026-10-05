@@ -1,4 +1,4 @@
-"""Kafka video processor composing FFmpeg, ASR, Vision, and C++ indexing."""
+"""Kafka video processor composing FFmpeg, ASR, Vision, and Python indexing."""
 
 from __future__ import annotations
 
@@ -259,7 +259,7 @@ class VideoIngestProcessor:
         if result.indexed_unit_count != len(segments):
             raise RetryableIngestError(
                 "INDEX_COUNT_MISMATCH",
-                "C++ Core indexed an unexpected video segment count",
+                "Python Core indexed an unexpected video segment count",
             )
 
 
