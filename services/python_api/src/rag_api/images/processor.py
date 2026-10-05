@@ -1,4 +1,4 @@
-"""Kafka image processor composing Vision, Embedding, and C++ indexing."""
+"""Kafka image processor composing Vision, Embedding, and Python indexing."""
 
 from __future__ import annotations
 
@@ -154,5 +154,5 @@ class ImageIngestProcessor:
             raise PermanentIngestError("INDEX_CONTRACT_INVALID", str(error)) from error
         if result.indexed_unit_count != 1:
             raise RetryableIngestError(
-                "INDEX_COUNT_MISMATCH", "C++ Core indexed an unexpected image count"
+                "INDEX_COUNT_MISMATCH", "Python Core indexed an unexpected image count"
             )

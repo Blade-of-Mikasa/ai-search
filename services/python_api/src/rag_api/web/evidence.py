@@ -1,4 +1,4 @@
-"""Maps extracted web sources into the C++ evidence-governance contract."""
+"""Maps extracted web sources into the evidence-governance contract."""
 
 from __future__ import annotations
 

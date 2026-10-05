@@ -4,7 +4,7 @@ const STEPS = [
   ["可信入口", "网关完成认证，注入 tenant / user / ACL"],
   ["查询规划", "Python Planner 拆出本地文档、图片、视频与 Web 路由"],
   ["并行召回", "OpenAI Web Search 与可选的本地内存索引同时工作"],
-  ["证据治理", "C++ HTTP Core 做过滤、去重、冲突识别和 Token 预算"],
+  ["证据治理", "Python Core 做过滤、去重、冲突识别和 Token 预算"],
   ["约束生成", "通用 ChatModel 只读取编号证据，持续输出 token"],
   ["引用验收", "Python 校验引用编号，React 展示来源与冲突"],
 ] as const;
@@ -42,7 +42,7 @@ export function Architecture({ liveStep }: ArchitectureProps) {
       <div className="section-heading">
         <div>
           <span className="eyebrow">SYSTEM MAP</span>
-          <h2>Python API，C++ HTTP Core</h2>
+          <h2>全 Python 服务端</h2>
           <p>默认只需一个模型 Key；本地入库、数据库和消息队列均为可选扩展。</p>
         </div>
         <button className="secondary-button" type="button" onClick={startDemo}>
@@ -66,11 +66,11 @@ export function Architecture({ liveStep }: ArchitectureProps) {
             <MapNode title="通用模型端口" detail="Chat / Embedding / Vision / ASR" tone="blue" />
             <MapNode title="Web & Ingestion" detail="网页搜索 / 可选异步入库" tone="blue" />
           </div>
-          <div className="map-arrow">↓ HTTP + JSON</div>
+          <div className="map-arrow">↓ 共享类型的 HTTP + JSON</div>
         </div>
 
         <div className="map-lane core-lane">
-          <span className="lane-label">C++20 CORE</span>
+          <span className="lane-label">PYTHON CORE</span>
           <div className="core-node">
             <strong>确定性证据内核</strong>
             <span>多路召回 · ACL 过滤 · RRF · 去重 · 冲突 · Token 预算 · Citation</span>

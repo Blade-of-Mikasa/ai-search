@@ -7,16 +7,16 @@
 React (5173)
   → FastAPI / model & web adapters (8000)
   → HTTP + JSON
-  → C++20 evidence core / in-memory index (8081)
+  → Python evidence core / in-memory index (8081)
 ```
 
-项目不再使用 gRPC、Protobuf、CMake、Conan 或 Milvus。C++ 使用
-[Blade](https://github.com/blade-build/blade-build) 构建，Python 与 C++ 之间使用普通
-HTTP/JSON。Nano 默认走网页搜索，因此最小启动不需要 MySQL、Kafka、S3 或向量数据库。
+服务端已全部使用 Python。独立 Core 进程让 API 和异步入库 worker 共享同一份内存索引，
+共享数据类和 Pydantic 负责 HTTP/JSON 契约，不再需要 C++ 工具链。Nano 默认走网页搜索，
+因此最小启动不需要 MySQL、Kafka、S3 或向量数据库。
 
 ## 快速启动
 
-需要 Linux、Python 3.11+、Node.js/npm、Git 和支持 C++20 的 GCC/Clang。
+需要 Linux、Python 3.11+ 和 Node.js/npm。
 
 ```bash
 ./scripts/bootstrap.sh
@@ -34,11 +34,10 @@ cp .env.example .env
 NANO_CORE_PORT=18081 NANO_API_PORT=18000 NANO_WEB_PORT=15173 ./scripts/run.sh
 ```
 
-`bootstrap.sh` 会在仓库的 `.tools/` 下安装固定版本的 Blade，不污染系统目录；如果系统
-已有 `blade` 命令则直接使用。构建命令也可以单独执行：
+Python 服务可单独做导入和语法检查：
 
 ```bash
-./scripts/blade.sh build //core:nano_core
+PYTHONPATH=services/python_api/src .venv/bin/python -m compileall -q services/python_api/src
 ```
 
 ## 最小必需项

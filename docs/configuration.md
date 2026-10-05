@@ -34,8 +34,9 @@
 - 视频入库：需要 Vision、Speech-to-Text、FFmpeg 和 FFprobe。
 - 遥测：启用时需要 OTLP/HTTP Collector。
 
-Nano 默认使用 C++ 进程内存索引，进程退出后索引不会保留。这是为了让最小版无需
-Milvus 即可启动；需要持久化向量库时再单独增加存储适配器。
+Nano 默认使用 Python Core 的进程内存索引，进程退出后索引不会保留。这是为了让最小版
+无需 Milvus 即可启动；Core 保持独立进程，使 Python API 和异步入库 worker 可以共享
+同一份索引。需要持久化向量库时再单独增加存储适配器。
 
 ## 服务端口
 
@@ -43,12 +44,13 @@ Milvus 即可启动；需要持久化向量库时再单独增加存储适配器�
 |---|---|
 | React | `http://127.0.0.1:5173` |
 | Python API | `http://127.0.0.1:8000` |
-| C++ HTTP Core | `http://127.0.0.1:8081` |
+| Python Core | `http://127.0.0.1:8081` |
 
 一键启动脚本支持用 `NANO_WEB_HOST`、`NANO_WEB_PORT`、`NANO_API_HOST`、
 `NANO_API_PORT`、`NANO_CORE_HOST`、`NANO_CORE_PORT` 覆盖这些默认值。
 
-Python 与 C++ 之间只有三个 JSON endpoint：
+Python API / worker 与 Core 之间只有三个 JSON endpoint；请求和响应模型直接复用 Python
+数据类：
 
 - `GET /health`
 - `POST /v1/execute-plan`
