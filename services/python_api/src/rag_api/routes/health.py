@@ -25,7 +25,7 @@ def _health_response(
     settings: Settings = request.app.state.settings
     checks: dict[str, str] = {"python_api": "ok"}
     if core_available is not None:
-        checks["rag_core"] = "ok" if core_available else "unavailable"
+        checks["python_core"] = "ok" if core_available else "unavailable"
     if model_configured is not None:
         checks["model_config"] = "ok" if model_configured else "missing_api_key"
     return HealthResponse(

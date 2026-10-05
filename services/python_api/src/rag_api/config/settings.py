@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from rag_api import __version__
+
 
 Environment = Literal["local", "test", "staging", "production"]
 
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     service_name: str = "nano-ai-search-api"
-    service_version: str = "0.2.0"
+    service_version: str = __version__
     environment: Environment = "local"
     api_prefix: str = "/api/v1"
     debug: bool = False
@@ -78,6 +80,7 @@ class Settings(BaseSettings):
     chat_api_key: SecretStr | None = None
     chat_model_id: str = "chat-general"
     chat_model_version: str = "local"
+    chat_reasoning_effort: Literal["none", "low", "high", "max"] | None = None
     chat_timeout_seconds: float = 120.0
     chat_max_output_tokens: int = 2_048
     planner_max_output_tokens: int = 1_024
@@ -86,6 +89,7 @@ class Settings(BaseSettings):
     answer_local_top_k: int = 8
     answer_local_timeout_ms: int = 2_000
     answer_web_result_count: int = 5
+    answer_web_max_routes: int = 2
     sse_heartbeat_seconds: float = 15.0
     document_download_max_bytes: int = 100_000_000
     document_chunk_max_chars: int = 1_600
@@ -125,9 +129,16 @@ class Settings(BaseSettings):
     bing_foundry_access_token: SecretStr | None = None
     bing_default_market: str | None = None
     bing_default_language: str | None = None
-    web_search_provider: Literal["openai", "foundry", "disabled"] = "openai"
+    web_search_provider: Literal[
+        "openai", "tavily", "foundry", "disabled"
+    ] = "openai"
     web_search_model_id: str | None = None
     web_search_timeout_seconds: float = 30.0
+    tavily_search_url: str = "https://api.tavily.com/search"
+    tavily_api_key: SecretStr | None = None
+    tavily_search_depth: Literal[
+        "basic", "fast", "ultra-fast", "advanced"
+    ] = "basic"
     web_fetch_timeout_seconds: float = 10.0
     web_fetch_max_bytes: int = 5_000_000
     web_fetch_max_redirects: int = 3
@@ -304,6 +315,13 @@ class Settings(BaseSettings):
     def validate_answer_web_count(cls, value: int) -> int:
         if not 1 <= value <= 50:
             raise ValueError("answer_web_result_count must be between 1 and 50")
+        return value
+
+    @field_validator("answer_web_max_routes")
+    @classmethod
+    def validate_answer_web_routes(cls, value: int) -> int:
+        if not 1 <= value <= 6:
+            raise ValueError("answer_web_max_routes must be between 1 and 6")
         return value
 
     @field_validator("sse_heartbeat_seconds")
@@ -530,6 +548,20 @@ class Settings(BaseSettings):
         parsed = urlparse(value)
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("bing_foundry_responses_url must be an HTTPS URL")
+        return value.rstrip("/")
+
+    @field_validator("tavily_search_url")
+    @classmethod
+    def validate_tavily_search_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise ValueError("tavily_search_url must be an HTTPS URL")
         return value.rstrip("/")
 
     @field_validator(

@@ -19,7 +19,7 @@ class HealthResponse(ApiModel):
     status: Literal["ok", "degraded"] = "ok"
     ready: bool
     request_id: str
-    checks: dict[str, Literal["ok", "unavailable"]] = Field(
+    checks: dict[str, Literal["ok", "unavailable", "missing_api_key"]] = Field(
         default_factory=dict
     )
 

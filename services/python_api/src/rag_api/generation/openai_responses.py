@@ -31,13 +31,17 @@ class OpenAIResponsesChatModel:
         model_version: str,
         timeout_seconds: float,
         api_key: str | None = None,
+        reasoning_effort: str | None = None,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
+        if reasoning_effort not in {None, "none", "low", "high", "max"}:
+            raise ValueError("unsupported reasoning effort")
         self._endpoint_url = endpoint_url
         self._model_id = model_id
         self._model_version = model_version
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._api_key = api_key
+        self._reasoning_effort = reasoning_effort
         self._session = session
 
     @property
@@ -170,6 +174,8 @@ class OpenAIResponsesChatModel:
                     "schema": request.response_schema,
                 }
             }
+        if self._reasoning_effort is not None:
+            payload["reasoning"] = {"effort": self._reasoning_effort}
         return payload
 
     @asynccontextmanager

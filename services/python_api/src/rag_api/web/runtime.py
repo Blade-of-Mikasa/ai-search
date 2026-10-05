@@ -14,6 +14,7 @@ from .extractor import TrafilaturaPageExtractor
 from .fetcher import SafeWebFetcher
 from .openai import OpenAIWebSearchProvider
 from .service import WebSearchService
+from .tavily import TavilySearchProvider
 
 
 def build_web_search_service(
@@ -33,6 +34,16 @@ def build_web_search_service(
                 else None
             ),
             timeout_seconds=settings.web_search_timeout_seconds,
+        )
+        return _service(settings, provider)
+    if settings.web_search_provider == "tavily":
+        if settings.tavily_api_key is None:
+            raise ValueError("Tavily configuration is missing: tavily_api_key")
+        provider = TavilySearchProvider(
+            search_url=settings.tavily_search_url,
+            api_key=settings.tavily_api_key.get_secret_value(),
+            timeout_seconds=settings.web_search_timeout_seconds,
+            search_depth=settings.tavily_search_depth,
         )
         return _service(settings, provider)
 
